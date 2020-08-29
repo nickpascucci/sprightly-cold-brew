@@ -18,7 +18,7 @@ module Crdt exposing (..)
 -- added; we will see how to combine these to get back some of the more general
 -- Set properties.
 
-import Set exposing (Set, foldl, insert, isEmpty, member, size)
+import Set exposing (Set)
 import Tuple exposing (first, second)
 
 
@@ -28,7 +28,12 @@ import Tuple exposing (first, second)
 
 
 type AppendOnlySet comparable
-    = AOS (Set comparable)
+    = AppendOnlySet (Set comparable)
+
+
+emptyAOS : AppendOnlySet comparable
+emptyAOS =
+    AppendOnlySet Set.empty
 
 
 
@@ -38,8 +43,8 @@ type AppendOnlySet comparable
 insertAOS : comparable -> AppendOnlySet comparable -> AppendOnlySet comparable
 insertAOS elt set =
     case set of
-        AOS s ->
-            AOS (insert elt s)
+        AppendOnlySet s ->
+            AppendOnlySet (Set.insert elt s)
 
 
 
@@ -49,29 +54,29 @@ insertAOS elt set =
 memberAOS : comparable -> AppendOnlySet comparable -> Bool
 memberAOS elt set =
     case set of
-        AOS s ->
-            member elt s
+        AppendOnlySet s ->
+            Set.member elt s
 
 
 sizeAOS : AppendOnlySet comparable -> Int
 sizeAOS set =
     case set of
-        AOS s ->
-            size s
+        AppendOnlySet s ->
+            Set.size s
 
 
 isEmptyAOS : AppendOnlySet comparable -> Bool
 isEmptyAOS set =
     case set of
-        AOS s ->
-            isEmpty s
+        AppendOnlySet s ->
+            Set.isEmpty s
 
 
 foldlAOS : (comparable -> b -> b) -> b -> AppendOnlySet comparable -> b
 foldlAOS f acc set =
     case set of
-        AOS s ->
-            foldl f acc s
+        AppendOnlySet s ->
+            Set.foldl f acc s
 
 
 
@@ -83,15 +88,15 @@ foldlAOS f acc set =
 -- identifier.
 
 
-type alias Sequenced comparable =
+type alias Sequence comparable =
     ( Int, comparable )
 
 
 
--- We can reduce an AOS of Sequenced values to the latest value:
+-- We can reduce an AppendOnlySet of Sequenced values to the latest value:
 
 
-latest : AppendOnlySet (Sequenced comparable) -> Maybe comparable
+latest : AppendOnlySet (Sequence comparable) -> Maybe comparable
 latest s =
     let
         ltst =
@@ -137,7 +142,7 @@ type alias Counter comparable =
 
 zero : Counter comparable
 zero =
-    { up = AOS Set.empty, down = AOS Set.empty }
+    { up = emptyAOS, down = emptyAOS }
 
 
 increment : comparable -> Counter comparable -> Counter comparable

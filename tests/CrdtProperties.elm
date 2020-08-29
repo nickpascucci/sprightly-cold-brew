@@ -10,13 +10,13 @@ import Test exposing (..)
 suite : Test
 suite =
     describe "The CRDT type"
-        [ describe "AppendOnlySet of a Sequenced value"
+        [ describe "AppendOnlySet of a Sequence value"
             [ test "can be reduced to a single, latest value" <|
                 \_ ->
                     let
-                        aos : AppendOnlySet (Sequenced String)
+                        aos : AppendOnlySet (Sequence String)
                         aos =
-                            AOS (insert ( 1, "Bar" ) (singleton ( 0, "Foo" )))
+                            AppendOnlySet (insert ( 1, "Bar" ) (singleton ( 0, "Foo" )))
                     in
                     Expect.equal (Just "Bar") (latest aos)
             ]
