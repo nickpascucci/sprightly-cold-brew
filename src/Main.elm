@@ -10,11 +10,19 @@ import Element.Font as Font
 import Element.Input exposing (button)
 import Html exposing (Html, div)
 import Maybe exposing (withDefault)
+import Prng.Uuid as Uuid
+import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Set exposing (Set)
 
 
+main : Program ( Int, List Int ) Model Msg
 main =
-    Browser.sandbox { init = init, update = update, view = view }
+    Browser.element
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }
 
 
 type alias Id =
@@ -33,6 +41,8 @@ type alias Model =
     { positions : AppendOnlySet (Sequence BoardState)
     , contents : Dict Id (AppendOnlySet (Sequence CardContents))
     , votes : Dict Id (Counter Id)
+    , currentSeed : Seed
+    , currentUuid : Maybe Uuid.Uuid
     }
 
 
@@ -41,12 +51,16 @@ initBoardState =
     AppendOnlySet Set.empty
 
 
-init : Model
-init =
-    { positions = initBoardState
-    , contents = Dict.empty
-    , votes = Dict.empty
-    }
+init : ( Int, List Int ) -> ( Model, Cmd Msg )
+init ( seed, seedExtension ) =
+    ( { positions = initBoardState
+      , contents = Dict.empty
+      , votes = Dict.empty
+      , currentSeed = initialSeed seed seedExtension
+      , currentUuid = Nothing
+      }
+    , Cmd.none
+    )
 
 
 type Msg
@@ -56,12 +70,13 @@ type Msg
 
 -- TODO: Add UUID generation logic, then wire up the NewCard action so that it adds the UUID to the
 -- "To Discuss" column state and a default CardContents to the contents state.
-
 -- TODO: On change to the model, dispatch CRDT updates to websockets.
+
+
 update msg model =
     case msg of
         NewCard ->
-            model
+            ( model, Cmd.none )
 
 
 type Column
@@ -117,6 +132,11 @@ cardTitles column model =
                     text t
         )
         colIds
+
+
+
+-- TODO: Manipulating all the CRDTs may be messy; would it make sense to write a function that just
+-- collapses everything down to one "latest" state for rendering?
 
 
 view model =
