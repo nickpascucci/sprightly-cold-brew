@@ -26,11 +26,14 @@ main =
 
 
 type alias Id =
+    -- Should be Uuid.Uuid, but Elm doesn't see those as Comparable.
     String
 
 
-
--- Should be Uuid.Uuid, but Elm doesn't see those as Comparable.
+type Column
+    = ToDiscuss
+    | InProgress
+    | Done
 
 
 type alias BoardState =
@@ -80,7 +83,7 @@ init ( seed, seedExtension ) =
 
 type Msg
     = NewCard
-    | AdvanceCard String
+    | MoveCard String Column
 
 
 
@@ -120,14 +123,45 @@ update msg model =
             , Cmd.none
             )
 
-        AdvanceCard id ->
-            ( model, Cmd.none )
+        MoveCard id toCol ->
+            let
+                curPos =
+                    withDefault ( [], [], [] ) <| latest model.positions
+
+                posSeqNum =
+                    withDefault 0 <| seqNum model.positions
+
+                nextPos =
+                    moveCard id toCol curPos
+
+                positions : AppendOnlySet (Sequence BoardState)
+                positions =
+                    insertAOS ( posSeqNum + 1, nextPos ) model.positions
+            in
+            ( { model
+                | positions = positions
+              }
+            , Cmd.none
+            )
 
 
-type Column
-    = ToDiscuss
-    | InProgress
-    | Done
+moveCard id toCol ( td, ip, dn ) =
+    let
+        isMatch =
+            \x -> x /= id
+
+        ( td2, ip2, dn2 ) =
+            ( List.filter isMatch td, List.filter isMatch ip, List.filter isMatch dn )
+    in
+    case toCol of
+        ToDiscuss ->
+            ( td2 ++ [ id ], ip2, dn2 )
+
+        InProgress ->
+            ( td2, ip2 ++ [ id ], dn2 )
+
+        Done ->
+            ( td2, ip2, dn2 ++ [ id ] )
 
 
 getColumn column boardState =
@@ -183,21 +217,37 @@ mapCards f column model =
 -- collapses everything down to one "latest" state for rendering?
 
 
-cardView : String -> CardContents -> Element Msg
-cardView id contents =
+nextCol col =
+    case col of
+        ToDiscuss ->
+            InProgress
+
+        InProgress ->
+            Done
+
+        Done ->
+            Done
+
+
+cardView : Column -> String -> CardContents -> Element Msg
+cardView col id contents =
     let
         ( title, body ) =
             contents
     in
-    button [] { label = text title, onPress = Just <| AdvanceCard id }
+    button [] { label = text title, onPress = Just <| MoveCard id (nextCol col) }
 
 
 cardsView : Column -> Model -> List (Element Msg)
 cardsView column model =
-    mapCards cardView column model
+    mapCards (cardView column) column model
 
 
 view model =
+    let
+        logModel =
+            Debug.log "Model: " model
+    in
     layout [] <|
         row [ width fill, height fill ]
             [ column
