@@ -29,6 +29,10 @@ type alias Id =
     String
 
 
+
+-- Should be Uuid.Uuid, but Elm doesn't see those as Comparable.
+
+
 type alias BoardState =
     ( List Id, List Id, List Id )
 
@@ -42,22 +46,29 @@ type alias Model =
     , contents : Dict Id (AppendOnlySet (Sequence CardContents))
     , votes : Dict Id (Counter Id)
     , currentSeed : Seed
-    , currentUuid : Maybe Uuid.Uuid
+    , currentUuid : Uuid.Uuid
     }
 
 
 initBoardState : AppendOnlySet (Sequence BoardState)
 initBoardState =
-    AppendOnlySet Set.empty
+    insertAOS ( 0, ( [], [], [] ) ) <| AppendOnlySet Set.empty
 
 
 init : ( Int, List Int ) -> ( Model, Cmd Msg )
 init ( seed, seedExtension ) =
+    let
+        firstSeed =
+            initialSeed seed seedExtension
+
+        ( newUuid, newSeed ) =
+            step Uuid.generator firstSeed
+    in
     ( { positions = initBoardState
       , contents = Dict.empty
       , votes = Dict.empty
-      , currentSeed = initialSeed seed seedExtension
-      , currentUuid = Nothing
+      , currentSeed = newSeed
+      , currentUuid = newUuid
       }
     , Cmd.none
     )
@@ -68,15 +79,41 @@ type Msg
 
 
 
--- TODO: Add UUID generation logic, then wire up the NewCard action so that it adds the UUID to the
--- "To Discuss" column state and a default CardContents to the contents state.
 -- TODO: On change to the model, dispatch CRDT updates to websockets.
 
 
 update msg model =
     case msg of
         NewCard ->
-            ( model, Cmd.none )
+            let
+                id =
+                    Uuid.toString model.currentUuid
+
+                ( td, ip, dn ) =
+                    withDefault ( [], [], [] ) <| latest model.positions
+
+                posSeqNum =
+                    withDefault 0 <| seqNum model.positions
+
+                positions : AppendOnlySet (Sequence BoardState)
+                positions =
+                    insertAOS ( posSeqNum + 1, ( List.append td [ id ], ip, dn ) ) model.positions
+
+                contents : Dict Id (AppendOnlySet (Sequence CardContents))
+                contents =
+                    Dict.insert id (AppendOnlySet Set.empty) model.contents
+
+                ( newUuid, newSeed ) =
+                    step Uuid.generator model.currentSeed
+            in
+            ( { model
+                | positions = positions
+                , contents = contents
+                , currentSeed = newSeed
+                , currentUuid = newUuid
+              }
+            , Cmd.none
+            )
 
 
 type Column

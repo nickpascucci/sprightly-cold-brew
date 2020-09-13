@@ -125,6 +125,35 @@ latest s =
             Just (second a)
 
 
+seqNum : AppendOnlySet (Sequence comparable) -> Maybe Int
+seqNum s =
+    let
+        ltst =
+            foldlAOS
+                (\x ->
+                    \acc ->
+                        case acc of
+                            Nothing ->
+                                Just x
+
+                            Just y ->
+                                if first y > first x then
+                                    Just y
+
+                                else
+                                    Just x
+                )
+                Nothing
+                s
+    in
+    case ltst of
+        Nothing ->
+            Nothing
+
+        Just a ->
+            Just (first a)
+
+
 
 -- Assuming that our sets start empty and only have one writer, we can then use
 -- an append-only set of a sequence type as a CRDT. If there are multiple
