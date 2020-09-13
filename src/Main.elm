@@ -41,6 +41,10 @@ type alias CardContents =
     ( String, String )
 
 
+defaultCard =
+    ( "Untitled", "" )
+
+
 type alias Model =
     { positions : AppendOnlySet (Sequence BoardState)
     , contents : Dict Id (AppendOnlySet (Sequence CardContents))
@@ -76,6 +80,7 @@ init ( seed, seedExtension ) =
 
 type Msg
     = NewCard
+    | AdvanceCard String
 
 
 
@@ -115,6 +120,9 @@ update msg model =
             , Cmd.none
             )
 
+        AdvanceCard id ->
+            ( model, Cmd.none )
+
 
 type Column
     = ToDiscuss
@@ -138,7 +146,7 @@ getColumn column boardState =
             dn
 
 
-cardTitles column model =
+mapCards f column model =
     let
         boardState =
             withDefault ( [], [], [] ) <| latest model.positions
@@ -149,24 +157,23 @@ cardTitles column model =
         contents =
             model.contents
 
-        titles =
+        cardBodies =
             Dict.map
                 (\k v ->
                     v
                         |> latest
-                        |> withDefault ( "Untitled", "Ignored" )
-                        |> Tuple.first
+                        |> withDefault defaultCard
                 )
                 contents
     in
     List.map
         (\k ->
-            case Dict.get k titles of
+            case Dict.get k cardBodies of
                 Nothing ->
-                    text "Untitled"
+                    f k defaultCard
 
                 Just t ->
-                    text t
+                    f k t
         )
         colIds
 
@@ -174,6 +181,20 @@ cardTitles column model =
 
 -- TODO: Manipulating all the CRDTs may be messy; would it make sense to write a function that just
 -- collapses everything down to one "latest" state for rendering?
+
+
+cardView : String -> CardContents -> Element Msg
+cardView id contents =
+    let
+        ( title, body ) =
+            contents
+    in
+    button [] { label = text title, onPress = Just <| AdvanceCard id }
+
+
+cardsView : Column -> Model -> List (Element Msg)
+cardsView column model =
+    mapCards cardView column model
 
 
 view model =
@@ -186,10 +207,14 @@ view model =
                 ]
               <|
                 [ el [ Font.underline ] <| text "To Discuss" ]
-                    ++ cardTitles ToDiscuss model
+                    ++ cardsView ToDiscuss model
                     ++ [ button [ Font.size 12, Font.italic ]
                             { label = text "+ New Card", onPress = Just NewCard }
                        ]
-            , column [ width <| fillPortion 1 ] [ el [ Font.underline ] <| text "In Progress" ]
-            , column [ width <| fillPortion 1 ] [ el [ Font.underline ] <| text "Done" ]
+            , column [ width <| fillPortion 1 ] <|
+                [ el [ Font.underline ] <| text "In Progress" ]
+                    ++ cardsView InProgress model
+            , column [ width <| fillPortion 1 ] <|
+                [ el [ Font.underline ] <| text "Done" ]
+                    ++ cardsView Done model
             ]
