@@ -27,6 +27,23 @@
         node: document.getElementById('myapp'),
         flags: flags
     });
+
+    var socket = new WebSocket('wss://echo.websocket.org');
+    // var socket = new WebSocket('ws://relay.ndpi.io');
+
+    // When a command goes to the `sendMessage` port, we pass the message
+    // along to the WebSocket.
+    app.ports.sendMessage.subscribe(function(message) {
+        console.log("JS sent: ", message);
+        socket.send(JSON.stringify(message));
+    });
+
+    // When a message comes into our WebSocket, we pass the message along
+    // to the `messageReceiver` port.
+    socket.addEventListener("message", function(event) {
+        console.log("JS received: ", event);
+        app.ports.messageReceiver.send(event.data);
+    });
   </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-module Main exposing (..)
+port module Main exposing (..)
 
 import Browser
 import Crdt exposing (..)
@@ -9,6 +9,8 @@ import Element.Events exposing (..)
 import Element.Font as Font
 import Element.Input exposing (button)
 import Html exposing (Html, div)
+import Json.Decode as D
+import Json.Encode as E
 import Maybe exposing (withDefault)
 import Prng.Uuid as Uuid
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
@@ -21,7 +23,7 @@ main =
         { init = init
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -84,6 +86,24 @@ init ( seed, seedExtension ) =
 type Msg
     = NewCard
     | MoveCard String Column
+    | Recv String
+
+
+type alias UpdateMessage =
+    -- A CRDT update for, or from, another client.
+    {}
+
+
+updateMessageDecoder : D.Decoder UpdateMessage
+updateMessageDecoder =
+    -- JSON decoder for reading UpdateMessages
+    D.succeed {}
+
+
+port sendMessage : UpdateMessage -> Cmd msg
+
+
+port messageReceiver : (String -> msg) -> Sub msg
 
 
 
@@ -120,7 +140,8 @@ update msg model =
                 , currentSeed = newSeed
                 , currentUuid = newUuid
               }
-            , Cmd.none
+            , sendMessage {}
+              -- TODO Send CRDT update
             )
 
         MoveCard id toCol ->
@@ -141,8 +162,24 @@ update msg model =
             ( { model
                 | positions = positions
               }
-            , Cmd.none
+            , sendMessage {}
+              -- TODO Send CRDT update
             )
+
+        Recv s ->
+            let
+                updateMsg =
+                    D.decodeString updateMessageDecoder s
+
+                _ =
+                    Debug.log "Received: " updateMsg
+            in
+            ( model, Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    messageReceiver Recv
 
 
 moveCard id toCol ( td, ip, dn ) =
