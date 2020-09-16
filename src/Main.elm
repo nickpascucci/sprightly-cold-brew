@@ -55,6 +55,7 @@ type alias Model =
     { positions : AppendOnlySet (Sequence BoardState)
     , contents : Dict Id (AppendOnlySet (Sequence CardContents))
     , votes : Dict Id (Counter Id)
+    , myId : String
     , currentSeed : Seed
     , currentUuid : Uuid.Uuid
     }
@@ -68,15 +69,19 @@ initBoardState =
 init : ( Int, List Int ) -> ( Model, Cmd Msg )
 init ( seed, seedExtension ) =
     let
-        firstSeed =
+        seed2 =
             initialSeed seed seedExtension
 
+        ( myUuid, seed3 ) =
+            step Uuid.generator seed2
+
         ( newUuid, newSeed ) =
-            step Uuid.generator firstSeed
+            step Uuid.generator seed3
     in
     ( { positions = initBoardState
       , contents = Dict.empty
       , votes = Dict.empty
+      , myId = Uuid.toString myUuid
       , currentSeed = newSeed
       , currentUuid = newUuid
       }
@@ -87,6 +92,7 @@ init ( seed, seedExtension ) =
 type Msg
     = NewCard
     | MoveCard String Column
+    | VoteCard String String
     | UpdateCard String Int CardContents
     | Recv String
 
@@ -94,19 +100,7 @@ type Msg
 type UpdateKind
     = CardData
     | CardPosition
-
-
-updateKindFromString : String -> D.Decoder UpdateKind
-updateKindFromString s =
-    case s of
-        "CardData" ->
-            D.succeed CardData
-
-        "CardPosition" ->
-            D.succeed CardPosition
-
-        _ ->
-            D.fail <| "Trying to decode an UpdateKind but got " ++ s
+    | CardVotes
 
 
 type alias UpdateData =
@@ -118,10 +112,27 @@ type alias UpdateData =
 type alias UpdateMessage =
     -- A CRDT update for, or from, another client.
     { updateKind : UpdateKind
+    , sender : String
     , id : String
     , seqNum : Int
     , data : UpdateData
     }
+
+
+updateKindFromString : String -> D.Decoder UpdateKind
+updateKindFromString s =
+    case s of
+        "CardData" ->
+            D.succeed CardData
+
+        "CardPosition" ->
+            D.succeed CardPosition
+
+        "CardVotes" ->
+            D.succeed CardVotes
+
+        _ ->
+            D.fail <| "Trying to decode an UpdateKind but got " ++ s
 
 
 cmdFromUpdate : UpdateMessage -> Maybe Msg
@@ -143,12 +154,16 @@ cmdFromUpdate upd =
                 Nothing ->
                     Nothing
 
+        CardVotes ->
+            Just <| VoteCard upd.sender upd.id
+
 
 decode : D.Decoder UpdateMessage
 decode =
     -- JSON decoder for reading UpdateMessages
-    D.map4 UpdateMessage
+    D.map5 UpdateMessage
         (D.field "updateKind" D.string |> D.andThen updateKindFromString)
+        (D.field "sender" D.string)
         (D.field "id" D.string)
         (D.field "seqNum" D.int)
         (D.field "data" decodeUpdateData)
@@ -194,7 +209,11 @@ encode upd =
 
                     CardPosition ->
                         "CardPosition"
+
+                    CardVotes ->
+                        "CardVotes"
           )
+        , ( "sender", E.string upd.sender )
         , ( "id", E.string upd.id )
         , ( "seqNum", E.int upd.seqNum )
         , ( "data", encodeData upd.data )
@@ -280,6 +299,7 @@ update msg model =
               }
             , sendUpdate
                 { updateKind = CardData
+                , sender = model.myId
                 , id = id
                 , seqNum = posSeqNum
                 , data =
@@ -310,10 +330,37 @@ update msg model =
               }
             , sendUpdate
                 { updateKind = CardPosition
+                , sender = model.myId
                 , id = id
                 , seqNum = posSeqNum
                 , data =
                     { position = Just toCol
+                    , cardData = Nothing
+                    }
+                }
+              -- TODO Send CRDT update
+            )
+
+        VoteCard voter id ->
+            let
+                counter =
+                    increment voter <|
+                        withDefault zero <|
+                            Dict.get id model.votes
+
+                votes =
+                    Dict.insert id counter model.votes
+            in
+            ( { model
+                | votes = votes
+              }
+            , sendUpdate
+                { updateKind = CardVotes
+                , sender = model.myId
+                , id = id
+                , seqNum = 0
+                , data =
+                    { position = Nothing
                     , cardData = Nothing
                     }
                 }
@@ -336,7 +383,7 @@ update msg model =
                 ( nextModel, _ ) =
                     case cardContents of
                         Just _ ->
-                            (model, Cmd.none)
+                            ( model, Cmd.none )
 
                         Nothing ->
                             update (MoveCard id ToDiscuss) model
@@ -419,9 +466,6 @@ mapCards f column model =
         colIds =
             getColumn column boardState
 
-        contents =
-            model.contents
-
         cardBodies =
             Dict.map
                 (\k v ->
@@ -429,16 +473,21 @@ mapCards f column model =
                         |> latest
                         |> withDefault defaultCard
                 )
-                contents
+                model.contents
+
+        cardVotes =
+            Dict.map
+                (\k v -> count v)
+                model.votes
     in
     List.map
         (\k ->
             case Dict.get k cardBodies of
                 Nothing ->
-                    f k defaultCard
+                    f k defaultCard <| withDefault 0 <| Dict.get k cardVotes
 
                 Just t ->
-                    f k t
+                    f k t <| withDefault 0 <| Dict.get k cardVotes
         )
         colIds
 
@@ -460,18 +509,27 @@ nextCol col =
             Done
 
 
-cardView : Column -> String -> CardContents -> Element Msg
-cardView col id contents =
+cardView : Column -> String -> String -> CardContents -> Int -> Element Msg
+cardView col myId id contents votes =
     let
         ( title, body ) =
             contents
     in
-    button [] { label = text title, onPress = Just <| MoveCard id (nextCol col) }
+    row [ width fill ]
+        [ button [ paddingXY 10 5 ]
+            { label = text title
+            , onPress = Just <| MoveCard id (nextCol col)
+            }
+        , button []
+            { label = text <| String.fromInt votes
+            , onPress = Just <| VoteCard myId id
+            }
+        ]
 
 
 cardsView : Column -> Model -> List (Element Msg)
 cardsView column model =
-    mapCards (cardView column) column model
+    mapCards (cardView column model.myId) column model
 
 
 view model =
